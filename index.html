@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dịch Config</title>
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { padding: 20px; }
+        #resultText { min-height: 200px; }
+        .footer { position: fixed; bottom: 0; width: 100%; height: 60px; }
+        .loading-popup {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        .popup {
+            display: none;
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            z-index: 10000;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <button id="guideButton" class="btn btn-primary mb-3">Hướng dẫn</button>
+        
+        <div class="popup" id="guidePopup">
+            <h4>Hướng dẫn sử dụng</h4>
+            <p>Hỗ trợ các định dạng:</p>
+            <ul>
+                <li>Khóa - giá trị: key: "value"</li>
+                <li>Màu sắc: &aText màu</li>
+                <li>Placeholder: {0}, %player%</li>
+                <li>Thẻ đặc biệt: &lt;pos&gt;</li>
+            </ul>
+            <button class="btn btn-sm btn-secondary" onclick="document.getElementById('guidePopup').style.display='none'">Đóng</button>
+        </div>
+
+        <div class="custom-file mb-3">
+            <input type="file" class="custom-file-input" id="configFile">
+            <label class="custom-file-label" for="configFile">Chọn file config</label>
+        </div>
+
+        <textarea class="form-control mb-3" id="configInput" rows="10" placeholder="Hoặc dán config vào đây..."></textarea>
+
+        <button class="btn btn-primary btn-block mb-3" id="translateBtn">Dịch</button>
+        
+        <div class="loading-popup" id="loading" style="display: none;">
+            <div class="alert alert-info">
+                <img src="https://i.gifer.com/ZZ5H.gif" width="50" class="mr-2">
+                Đang xử lý... Vui lòng chờ!
+            </div>
+        </div>
+
+        <textarea class="form-control" id="resultText" rows="10" readonly style="display: none;"></textarea>
+        <button class="btn btn-success btn-block mt-3" id="downloadBtn" style="display: none;">Tải về</button>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            // Xử lý sự kiện cho các nút
+            $('#guideButton').click(() => $('#guidePopup').show());
+            $('#configFile').change(function(e) {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                reader.onload = (e) => $('#configInput').val(e.target.result);
+                reader.readAsText(file);
+            });
+
+            $('#translateBtn').click(async function() {
+                $('#loading').show();
+                const sourceText = $('#configInput').val();
+                const translated = await translateConfig(sourceText);
+                $('#resultText').val(translated).show();
+                $('#downloadBtn').show();
+                $('#loading').hide();
+            });
+
+            $('#downloadBtn').click(function() {
+                const text = $('#resultText').val();
+                const blob = new Blob([text], {type: 'text/plain'});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'translated_config.yml';
+                a.click();
+            });
+        });
+
+        async function translateConfig(sourceText) {
+            const lines = sourceText.split('\n');
+            const specialPatterns = [
+                /^[a-f0-9&]/i,         // Mã màu
+                /^{[0-9]+}/,           // Placeholder số
+                /%[a-z]+%/i,           // Placeholder chữ
+                /<pos>/,               // Thẻ đặc biệt
+                /\\n/,                  // Xuống dòng
+                /^(true|false)$/i       // Giá trị boolean
+            ];
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const match = line.match(/^(\s*[\w\.-]+\s*:\s*)(['"]?)(.*?)(\2)(\s*#.*)?$/);
+                
+                if (match) {
+                    const [_, prefix, quote, content, , comment] = match;
+                    let translatedContent = '';
+
+                    // Tách các thành phần đặc biệt
+                    const tokens = content.split(/(&\w|{[0-9]+}|%[a-z]+%|<pos>|\\n)/gi);
+                    
+                    for (const token of tokens) {
+                        if (specialPatterns.some(pattern => pattern.test(token))) {
+                            translatedContent += token;
+                        } else if (token.trim()) {
+                            const translated = await translateText(token);
+                            translatedContent += translated;
+                        }
+                    }
+
+                    lines[i] = `${prefix}${quote}${translatedContent}${quote}${comment || ''}`;
+                }
+            }
+            return lines.join('\n');
+        }
+
+        function translateText(text) {
+            return new Promise((resolve) => {
+                $.ajax({
+                    url: `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=vi&dt=t&q=${encodeURIComponent(text)}`,
+                    success: (data) => resolve(data[0][0][0]),
+                    error: () => resolve(text) // Giữ nguyên text nếu lỗi
+                });
+            });
+        }
+    </script>
+</body>
+</html>
